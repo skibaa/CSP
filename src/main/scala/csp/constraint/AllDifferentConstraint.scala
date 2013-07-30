@@ -17,7 +17,7 @@ class Vertex {
   var marked = false
   var isFree = true
 
-  def reverse = {
+  def reverse() = {
     val t = from
     from = to
     to = t
@@ -28,8 +28,8 @@ case class ValVertex(vl:Value) extends Vertex
 
 object Edge {
   def apply (from:Vertex, to:Vertex):Edge = (from, to) match {
-    case (x:VarVertex, v:ValVertex) => new Edge(x, v).init(true)
-    case (v:ValVertex, x:VarVertex) => new Edge(x, v).init(false)
+    case (x:VarVertex, v:ValVertex) => new Edge(x, v).init(fromVar = true)
+    case (v:ValVertex, x:VarVertex) => new Edge(x, v).init(fromVar = false)
     case _ => throw new IllegalArgumentException("Must be one argument of type VarVertex and another ValVertex, in any order")
   }
 }
@@ -48,8 +48,8 @@ case class Edge private (_x:VarVertex, _v:ValVertex) {
     else
       setFromTo(v, x)
   }
-  def init(fv:Boolean) = {
-    fromVar = fv
+  def init(fromVar:Boolean) = {
+    this.fromVar = fromVar
     this
   }
 
@@ -65,28 +65,36 @@ case class Edge private (_x:VarVertex, _v:ValVertex) {
     to.from -= from
   }
 
-  def reverse = {fromVar = !fromVar}
+  def reverse() = {fromVar = !fromVar}
 }
 
 case class Graph(vars:Set[VarVertex], vals:Set[ValVertex]) {
   def all:Iterator[Vertex] = vars.iterator ++ vals.iterator
 
-  def reverse = all.foreach(_.reverse)
+  def reverse() = all.foreach(_.reverse())
 
   private def findUnmarkedFrom(from:Vertex):Iterable[Vertex] = {
     val parts = from.from.view.partition(_.isFree)
     parts._1.filter(!_.marked) ++ parts._2.filter(!_.marked)
   }
 
-  def forAllPaths(from:Vertex, f:Edge=>Unit):Unit = {
-    val options = findUnmarkedFrom(from)
+  def forSomePaths(from:Vertex, f:Edge=>Unit, excluded:Set[Edge]):Set[Edge] = {
+    var accVisited = excluded
+    val options = from.from
     if (options.isEmpty)
-      return
+      return accVisited
     for(to <- options) {
       val edge = Edge(from, to)
-      f(edge)
-      forAllPaths(to, f)
+      if (!accVisited(edge)) {
+        f(edge)
+        accVisited = forSomePaths(to, f, accVisited + edge)
+      }
     }
+    accVisited
+  }
+
+  def forAllPaths(from:Vertex, f:Edge=>Unit):Unit = {
+    forSomePaths(from, f, Set.empty)
   }
 
   def findPath(from:Vertex, check:Edge=>Boolean) = {
@@ -126,14 +134,14 @@ case class Graph(vars:Set[VarVertex], vals:Set[ValVertex]) {
       case _ => false
     }
 
-    unmarkAll
+    unmarkAll()
 
     val path = findPath(freeVars.minBy(_.from.size), isFreeValue)
 
     path match {
       case Some(edgesList) =>
         edgesList.foreach{edge =>
-          edge.reverse
+          edge.reverse()
           edge.v.isFree = false
           edge.x.isFree = false
         }
@@ -143,7 +151,7 @@ case class Graph(vars:Set[VarVertex], vals:Set[ValVertex]) {
     }
   }
 
-  def unmarkAll {
+  def unmarkAll() {
     vars.foreach(_.marked = false)
     vals.foreach(_.marked = false)
   }
@@ -151,96 +159,102 @@ case class Graph(vars:Set[VarVertex], vals:Set[ValVertex]) {
 }
 
 class AllDifferentConstraint(vars:Set[Variable]) extends Constraint {
-  def check(d: Domain): CheckResult = new CheckResult {
-    if (!vars.forall(d.contents.contains(_)))
-      return Constraint.infeasible
+  def check(d: Domain): CheckResult =
+    if (!vars.forall(d.contents.contains))
+      Constraint.infeasible
+    else
+      new CheckResult {
+        val graph = {
+          val graphVals = MutableMap.empty[Value, ValVertex]
+          val graphVars = MutableSet.empty[VarVertex]
 
-    val graph = {
-      val graphVals = MutableMap.empty[Value, ValVertex]
-      val graphVars = MutableSet.empty[VarVertex]
+          vars.foreach {
+            x =>
+              val vals = d.contents(x)
+              val varVertex = VarVertex(x)
 
-      vars.foreach{x =>
-        val vals = d.contents(x)
-        val varVertex = VarVertex(x)
-
-        vals.foreach { value =>
-          val valVertex = graphVals.getOrElseUpdate(value, ValVertex(value))
-          varVertex.from += valVertex
-          valVertex.to += varVertex
-        }
-        graphVars += varVertex
-      }
-      Graph (vars=graphVars.toSet, vals = graphVals.values.toSet)
-    }
-
-    lazy val isFeasible: Boolean = {
-      println("Start isFeasible")
-      while (graph.improve)
-        ()
-
-      graph.freeVars.isEmpty
-    }
-
-    def prune: VarValMap = {
-      if (!isFeasible)
-        throw new UnsupportedOperationException("Cannot prune infeasible solution")
-
-      graph.reverse
-
-      val freeEdgesSet = for {
-        from <- graph.vals
-        to <- from.from
-      }
-        yield Edge(from, to)
-
-      val freeEdgesMap = freeEdgesSet.map(edge => (edge, edge)).toMap
-
-      graph.unmarkAll
-
-      def forEachFreeEdge(mayBePath:Option[Iterable[Edge]], f:Edge => Unit) = for {
-        path <- mayBePath
-        edge <- path
-        freeEdge <- freeEdgesMap.get(edge)
-      } f(freeEdge)
-
-      def markEvenPathsFromFree {
-        val freeVals = graph.vals.filter(_.isFree)
-
-        def mark(edge:Edge) = {
-          freeEdgesMap.get(edge).foreach(e => e.marked = true)
+              vals.foreach {
+                value =>
+                  val valVertex = graphVals.getOrElseUpdate(value, ValVertex(value))
+                  varVertex.from += valVertex
+                  valVertex.to += varVertex
+              }
+              graphVars += varVertex
+          }
+          Graph(vars = graphVars.toSet, vals = graphVals.values.toSet)
         }
 
-        freeVals.foreach{freeVal =>
-          graph.forAllPaths(freeVal, mark)
+        lazy val isFeasible: Boolean = {
+          while (graph.improve)
+            ()
+
+          graph.freeVars.isEmpty
         }
-      }
 
-      markEvenPathsFromFree
+        lazy val prune: VarValMap = {
+          if (!isFeasible)
+            throw new UnsupportedOperationException("Cannot prune infeasible solution")
 
-      val neededEdges:MutableSet[Edge] = MutableSet.empty
-      neededEdges ++= freeEdgesSet.filter(_.marked)
+          graph.reverse()
 
-      def findCircle(startEdge: Edge) = {
-        def isCircle (edge:Edge) =
-          (edge.to == startEdge.from)
+          val freeEdgesSet = for {
+            from <- graph.vals
+            to <- from.from
+          }
+          yield Edge(from, to)
 
-        startEdge.to.marked = true
-        graph.findPath(startEdge.to, isCircle).map(path => startEdge::path)
-      }
+          val freeEdgesMap = freeEdgesSet.map(edge => (edge, edge)).toMap
 
-      freeEdgesSet.foreach { edge =>
-        if (!neededEdges(edge)) {
-          graph.unmarkAll
-          val mayBePath = findCircle(edge)
-          forEachFreeEdge(mayBePath, freeEdge => neededEdges += freeEdge)
+          graph.unmarkAll()
+
+          def forEachFreeEdge(mayBePath: Option[Iterable[Edge]], f: Edge => Unit) = for {
+            path <- mayBePath
+            edge <- path
+            freeEdge <- freeEdgesMap.get(edge)
+          } f(freeEdge)
+
+          def markEvenPathsFromFree() {
+            val freeVals = graph.vals.filter(_.isFree)
+            var alreadyVisited = Set.empty[Edge]
+
+            def mark(edge: Edge) = {
+              freeEdgesMap.get(edge).foreach(e => e.marked = true)
+            }
+
+            freeVals.foreach {
+              freeVal =>
+                alreadyVisited = graph.forSomePaths(freeVal, mark, alreadyVisited)
+            }
+          }
+
+          markEvenPathsFromFree()
+
+          val neededEdges: MutableSet[Edge] = MutableSet.empty
+          neededEdges ++= freeEdgesSet.filter(_.marked)
+
+          def findCircle(startEdge: Edge) = {
+            def isCircle(edge: Edge) = edge.to == startEdge.from
+
+            startEdge.to.marked = true
+            graph.findPath(startEdge.to, isCircle).map(path => startEdge :: path)
+          }
+
+          freeEdgesSet.foreach {
+            edge =>
+              if (!neededEdges(edge)) {
+                graph.unmarkAll()
+                val mayBePath = findCircle(edge)
+                forEachFreeEdge(mayBePath, freeEdge => neededEdges += freeEdge)
+              }
+          }
+
+          val unneededEdges = freeEdgesSet -- neededEdges
+          val res = new mutable.HashMap[Variable, MutableSet[Value]] with mutable.MultiMap[Variable, Value]
+          unneededEdges.foreach(edge => res.addBinding(edge.x.x, edge.v.vl))
+          res.map {
+            case (k, v) => (k, v.toSet)
+          }.toMap
         }
+
       }
-
-      val unneededEdges = freeEdgesSet -- neededEdges
-      val res = new HashMap[Variable, MutableSet[Value]] with mutable.MultiMap[Variable, Value]
-      unneededEdges.foreach(edge => res.addBinding(edge.x.x, edge.v.vl))
-      res.map{case (k, v) => (k,v.toSet)}.toMap
-    }
-
-  }
 }

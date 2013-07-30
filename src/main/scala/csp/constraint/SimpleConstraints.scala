@@ -2,6 +2,7 @@ package csp.constraint
 
 import csp._
 import Domain._
+import csp.constraint.Constraint.CheckResult
 
 object Condition {
   val empty = new Condition {
@@ -15,7 +16,7 @@ trait Condition {
 
 trait SimpleCondition extends Condition {
   override def partition(values:Set[Value]):(Set[Value],Set[Value]) =
-    values.partition(isGood(_))
+    values partition isGood
 
   def isGood(v:Value):Boolean
 }
@@ -42,7 +43,6 @@ class VariableOps(x:Variable) {
     def isGood(vl:Value) = !vals.contains(vl)
   })
 }
-
 
 class ConditionOps(c:Condition) {
   def unary_! = new Condition {

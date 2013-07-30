@@ -4,7 +4,6 @@ import org.scalatest.FunSuite
 import csp.constraint.AllDifferentConstraint
 
 class AllDifferentConstraintSuite extends FunSuite {
-  val ad = new AllDifferentConstraint
   object x extends Variable
   object y extends Variable
   object z extends Variable
@@ -15,6 +14,7 @@ class AllDifferentConstraintSuite extends FunSuite {
 
   test ("full graph is feasible, nothing to prune") {
     val d1 = Domain(Map(x->Set(one, two), y->Set(one, two)))
+    val ad = new AllDifferentConstraint(d1.vars)
     val chad1 = ad.check(d1)
 
     assert(chad1.isFeasible)
@@ -24,6 +24,7 @@ class AllDifferentConstraintSuite extends FunSuite {
 
   test ("too few values, not feasible, prune is illegal") {
     val d2 = Domain(Map(x->Set(one, two), y->Set(one, two), z->Set(one, two)))
+    val ad = new AllDifferentConstraint(d2.vars)
     val chad2 = ad.check(d2)
     assert(!chad2.isFeasible)
     intercept[UnsupportedOperationException] {
@@ -33,6 +34,7 @@ class AllDifferentConstraintSuite extends FunSuite {
 
   test ("forced value on var, other var for that val is pruned") {
     val d = Domain(Map(x->Set(one), y->Set(one, two)))
+    val ad = new AllDifferentConstraint(d.vars)
     val ch = ad.check(d)
     assert(ch.isFeasible)
     assert(ch.prune === Map(y->Set(one)))
@@ -43,6 +45,7 @@ class AllDifferentConstraintSuite extends FunSuite {
     val vars = Array.tabulate(1000)(i => new Variable {})
     val bigDomain = Domain(vars.map(v => (v, vals)).toMap)
     println ("before big check")
+    val ad = new AllDifferentConstraint(bigDomain.vars)
     val bigCheck = ad.check(bigDomain)
     println("all different big ="+bigCheck.isFeasible)
   }
@@ -52,6 +55,7 @@ class AllDifferentConstraintSuite extends FunSuite {
     val vars = Array.tabulate(1001)(i => new Variable {})
     val bigDomain = Domain(vars.map(v => (v, vals)).toMap)
     println ("before big check")
+    val ad = new AllDifferentConstraint(bigDomain.vars)
     val bigCheck = ad.check(bigDomain)
     println("all different big ="+bigCheck.isFeasible)
   }
@@ -69,6 +73,7 @@ class AllDifferentConstraintSuite extends FunSuite {
       vars(5)->Set(vals(5),vals(6))
     ))
 
+    val ad = new AllDifferentConstraint(d.vars)
     val ch = ad.check(d)
 
     assert(ch.isFeasible)
