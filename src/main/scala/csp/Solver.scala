@@ -2,6 +2,16 @@ package csp
 
 import csp.constraint.Constraint
 
+object Solver {
+  var badDomains = collection.mutable.Set.empty[Int]
+
+  def addBadDomain(bad:Int) {
+    if (badDomains.size > 10000)
+      badDomains = collection.mutable.Set.empty[Int]
+    badDomains += bad
+  }
+}
+
 class Solver(domain:Domain, constraints:Seq[Constraint]) {
   def isSolved =
     domain.contents.forall { case (x, vals) =>
@@ -9,6 +19,11 @@ class Solver(domain:Domain, constraints:Seq[Constraint]) {
     }
 
   def solve:Option[Domain] = {
+    if (Solver.badDomains.contains(domain.hashCode())) {
+      println("pruning bad domain")
+      return None
+    }
+
     if (isSolved)
       return Some(domain)
 
@@ -47,6 +62,8 @@ class Solver(domain:Domain, constraints:Seq[Constraint]) {
       if (tryResult.isDefined)
         return tryResult
     }
+
+    Solver.addBadDomain(domain.hashCode)
 
     None
   }

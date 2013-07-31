@@ -82,7 +82,7 @@ class NQSuite extends FunSuite {
   }
 
   test ("big feasible") {
-    val solution = NQDomain.sover(25).solve
+    val solution = NQDomain.solver(25).solve
 
     assert(solution.isDefined)
 

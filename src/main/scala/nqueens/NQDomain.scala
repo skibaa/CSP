@@ -17,7 +17,7 @@ object NQDomain {
     new NQDomain(table)
   }
 
-  def sover(size:Int) = {
+  def solver(size:Int) = {
     val empty = NQDomain.empty(size)
     val d = empty.remove(Map(
       empty.columns(0) -> (0 until empty.columns.size/2).map(i=>NQVal(i)).toSet,
@@ -33,6 +33,16 @@ object NQDomain {
 }
 
 class NQDomain private (table:NQDomain.TableType) extends Domain {
+  private def getTable = table
+  override def equals(that:Any):Boolean = {
+    if(!that.isInstanceOf[NQDomain])
+      return false
+    val thatNQDomain = that.asInstanceOf[NQDomain]
+    this.table.equals(thatNQDomain.getTable)
+  }
+
+  override def hashCode():Int = table.hashCode()
+
   import NQDomain._
   def size = table.size
 
